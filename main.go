@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-func main()  {
+func main() {
 	var db = map[string]string{
 		"Tom":  "630",
 		"Jack": "589",

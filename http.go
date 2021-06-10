@@ -11,7 +11,7 @@ var defaultBasePath = "/go_cache/"
 
 type HttpPool struct {
 	selfPath string // like 127.0.0.1:9999
-	basePath string	// like /
+	basePath string // like /
 }
 
 func NewHttpPool(self string) *HttpPool {
@@ -21,7 +21,7 @@ func NewHttpPool(self string) *HttpPool {
 	}
 }
 
-func (p *HttpPool) Log(format string, v ...interface{})  {
+func (p *HttpPool) Log(format string, v ...interface{}) {
 	log.Printf("[Server %s] %s", p.selfPath, fmt.Sprintf(format, v...))
 }
 
@@ -50,4 +50,3 @@ func (p *HttpPool) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write(byteView.b)
 }
-
