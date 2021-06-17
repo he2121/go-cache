@@ -3,6 +3,9 @@ package main
 import (
 	"log"
 	"sync"
+
+	"github.com/he2121/go-cache/gocachepb"
+	"github.com/he2121/go-cache/singleflight"
 )
 
 type Group struct {
@@ -10,6 +13,8 @@ type Group struct {
 	getter    Getter
 	mainCache cache
 	peers     PeerPicker
+
+	loader *singleflight.Group
 }
 
 var (
@@ -27,6 +32,7 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 		name:      name,
 		getter:    getter,
 		mainCache: cache{cacheBytes: cacheBytes},
+		loader:    &singleflight.Group{},
 	}
 	groups[name] = group
 	return group
@@ -51,28 +57,38 @@ func (g *Group) Get(key string) (ByteView, error) {
 		log.Println("[goCache] hit")
 		return byteView, nil
 	}
-	// 从本地获取
 	return g.load(key)
 }
 
 func (g *Group) load(key string) (ByteView, error) {
-	if g.peers != nil {
-		if peer, ok := g.peers.PickPeer(key); ok {
-			if value, err := g.getFromPeer(peer, key); err == nil {
-				return value, nil
+	viewi, err := g.loader.Do(key, func() (interface{}, error) {
+		if g.peers != nil {
+			if peer, ok := g.peers.PickPeer(key); ok {
+				if value, err := g.getFromPeer(peer, key); err == nil {
+					return value, nil
+				}
+				log.Println("[GeeCache] Failed to get from peer")
 			}
-			log.Println("[GeeCache] Failed to get from peer")
 		}
+		return g.getLocally(key)
+	})
+	if err != nil {
+		return viewi.(ByteView), nil
 	}
-	return g.getLocally(key)
+	return viewi.(ByteView), nil
 }
 
 func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
-	bytes, err := peer.Get(g.name, key)
+	req := &gocachepb.Request{
+		Group: g.name,
+		Key:   key,
+	}
+	res := &gocachepb.Response{}
+	err := peer.Get(req, res)
 	if err != nil {
 		return ByteView{}, err
 	}
-	return ByteView{b: bytes}, nil
+	return ByteView{b: res.Value}, nil
 }
 
 func (g *Group) getLocally(key string) (ByteView, error) {

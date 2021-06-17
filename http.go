@@ -9,7 +9,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/golang/protobuf/proto"
+
 	"github.com/he2121/go-cache/consistent_hash"
+	"github.com/he2121/go-cache/gocachepb"
 )
 
 const (
@@ -79,29 +82,40 @@ func (p *HttpPool) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(byteView.b)
+	// ...
+	// Write the value to the response body as a proto message.
+	body, err := proto.Marshal(&gocachepb.Response{Value: byteView.ByteSlice()})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(body)
 }
 
 type httpGetter struct {
 	baseURL string
 }
 
-func (h *httpGetter) Get(group, key string) ([]byte, error) {
-	addr := fmt.Sprintf("%s%s/%s", h.baseURL, url.QueryEscape(group), url.QueryEscape(key))
+func (h *httpGetter) Get(in *gocachepb.Request, out *gocachepb.Response) error {
+	addr := fmt.Sprintf("%s%s/%s", h.baseURL, url.QueryEscape(in.Group), url.QueryEscape(in.Key))
 	resp, err := http.Get(addr)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server return: %v", resp.Status)
+		return fmt.Errorf("server return: %v", resp.Status)
 	}
 	bytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return bytes, nil
+	if err = proto.Unmarshal(bytes, out); err != nil {
+		return fmt.Errorf("decoding response body: %v", err)
+	}
+	return nil
 }
 
 var _ PeerGetter = (*httpGetter)(nil)
